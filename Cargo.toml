@@ -1,0 +1,12 @@
+[package]
+name = "ip"
+version = "0.1.0"
+edition = "2021"
+description = "Simple command line tool for managing network interface on Theseus OS."
+authors = ["Sébastien Canu <sebastien.canu.n7@gmail.com>"]
+
+[dependencies]
+getopts = "0.2.21"
+
+[dependencies.terminal_print]
+path = "../../kernel/terminal_print"
