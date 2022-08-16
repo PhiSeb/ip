@@ -8,17 +8,27 @@ extern crate getopts;
 extern crate network_manager;
 
 use alloc::string::String;
-use alloc::string::ToString;
 use alloc::vec::Vec;
+use core::fmt;
 use core::str::FromStr;
 use getopts::{Matches, Options};
-use network_manager::{NetworkInterfaceRef, NETWORK_INTERFACES};
+use network_manager::NETWORK_INTERFACES;
 use smoltcp::{
-    iface::Routes,
-    socket::SocketSet,
-    time::Instant,
-    wire::{EthernetAddress, IpAddress, IpCidr},
+    iface::Route,
+    wire::{IpAddress, IpCidr},
 };
+
+struct DisplayableRoute(Route);
+
+impl fmt::Display for DisplayableRoute {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if let Some(time) = self.0.expires_at {
+            return write!(f, "{} (expires at {})", self.0.via_router, time);
+        } else {
+            return write!(f, "{}", self.0.via_router);
+        }
+    }
+}
 
 #[derive(Debug)]
 enum Objet {
@@ -90,7 +100,7 @@ ROUTE := NODE_SPEC [ INFO_SPEC ]"#
                             .collect()
                     };
                     println!("interface {}:", counter);
-                    for add in adds {
+                    for &add in adds.iter() {
                         match add {
                             IpCidr::Ipv4(ip4) => {
                                 println!("  inet4 {}", ip4);
@@ -101,12 +111,45 @@ ROUTE := NODE_SPEC [ INFO_SPEC ]"#
                             IpCidr::__Nonexhaustive => {}
                         }
                     }
+                    if adds.is_empty() {
+                        println!("  no IP address assigned");
+                    }
                     counter = counter + 1;
                 }
                 0
             }
             Objet::Route => {
-                println!("Not implemented");
+                //println!("Not implemented");
+                let mut counter = 1;
+                for iterface in net_iterfaces.iter() {
+                    println!("interface {}:", counter);
+                    let mut routes_clone: Vec<(IpCidr, Route)> = Vec::new();
+                    {
+                        let mut locked_iterface = iterface.lock();
+                        let routes = locked_iterface.routes_mut();
+                        routes.update(|route_map| {
+                            for r in route_map.iter() {
+                                routes_clone.push((r.0.clone(), r.1.clone()));
+                            }
+                        });
+                    }
+                    let default_cidr_ip4 = IpCidr::new(IpAddress::v4(0, 0, 0, 0), 0);
+                    let default_cidr_ip6 = IpCidr::new(IpAddress::v6(0, 0, 0, 0, 0, 0, 0, 0), 0);
+                    for (ip_cidr, by) in routes_clone.iter() {
+                        if *ip_cidr == default_cidr_ip4 {
+                            println!("  default via {}", DisplayableRoute(by.clone()));
+                        }
+                        if *ip_cidr == default_cidr_ip6 {
+                            println!("  default via {}", DisplayableRoute(by.clone()));
+                        }
+                    }
+                    for (ip_cidr, by) in routes_clone.iter() {
+                        if *ip_cidr != default_cidr_ip4 && *ip_cidr != default_cidr_ip6 {
+                            println!("  {} -> {}", ip_cidr, DisplayableRoute(by.clone()));
+                        }
+                    }
+                    counter = counter + 1;
+                }
                 0
             }
         };
